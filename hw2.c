@@ -447,6 +447,7 @@ int RemoveFile(char* name)
 {
 	char* path, * backup;
 	path = (char*)malloc(strlen(name) + 1);
+	strcpy(path, name);
 	backup = path;
 
 	int result = -1;
@@ -465,48 +466,43 @@ int RemoveFile(char* name)
 		// SEARCH ERASE TARGET
 		{
 			for (int i = 0; i < iNode.allocBlocks; ++i) {
-			int blck;
-			if (i < NUM_OF_DIRECT_BLOCK_PTR) {
-				blck = iNode.dirBlockPtr[i];
-				if (blck < 1) break;
-			}
-			else {
-				if (iNode.indirectBlockPtr < 1) break;
-				blck = GetIndirectBlockEntry(iNode.indirectBlockPtr, i - NUM_OF_DIRECT_BLOCK_PTR);
-				if (blck < 1) break;
-				if (targetBlck == -1) targetIndirect = 1;
-				indirect = 1;
-			}
-
-			if (blck < 1) break;
-			for (int k = 0; k < NUM_OF_DIRENT_PER_BLK; ++k) {
-				GetDirEntry(blck, k, &dir);
-				if (dir.inodeNum < 1) {
-					if (strcmp(dir.name, CURRENT_DIR) == 0) continue;
-					if (strcmp(dir.name, PARENT_DIR) == 0) continue;
-
-					break;
+				int blck;
+				if (i < NUM_OF_DIRECT_BLOCK_PTR) {
+					blck = iNode.dirBlockPtr[i];
+					if (blck < 1) break;
+				}
+				else {
+					if (iNode.indirectBlockPtr < 1) break;
+					blck = GetIndirectBlockEntry(iNode.indirectBlockPtr, i - NUM_OF_DIRECT_BLOCK_PTR);
+					if (blck < 1) break;
+					if (targetBlck == -1) targetIndirect = 1;
+					indirect = 1;
 				}
 
-				Inode temp;
-				GetInode(dir.inodeNum, &temp);
-				lastBlck = i; lastEntry = k;
-				if (temp.type == FILE_TYPE_FILE && strcmp(dir.name, path) == 0) {
-					targetBlck = i;
-					targetEntry = k;
-					find = 1;
+
+				for (int k = 0; k < NUM_OF_DIRENT_PER_BLK; ++k) {
+					GetDirEntry(blck, k, &dir);
+					if (dir.inodeNum < 1) {
+						if (strcmp(dir.name, CURRENT_DIR) == 0) continue;
+						if (strcmp(dir.name, PARENT_DIR) == 0) continue;
+
+						break;
+					}
+
+					Inode temp;
+					GetInode(dir.inodeNum, &temp);
+					lastBlck = i; lastEntry = k;
+					if (temp.type == FILE_TYPE_FILE && strcmp(dir.name, path) == 0) {
+						targetBlck = i;
+						targetEntry = k;
+						find = 1;
+					}
 				}
 			}
-		}
 
 		}
 
 		if (find) {
-			Inode dNode; DirEntry dDir;
-			GetDirEntry(targetBlck, targetEntry, &dDir);
-			GetInode(dDir.inodeNum, &dNode);
-
-
 			int relLBlck;
 			if (indirect) relLBlck = GetIndirectBlockEntry(iNode.indirectBlockPtr, lastBlck - NUM_OF_DIRECT_BLOCK_PTR);
 			else relLBlck = iNode.dirBlockPtr[lastBlck];
@@ -516,10 +512,12 @@ int RemoveFile(char* name)
 			else relTBlck = iNode.dirBlockPtr[targetBlck]; 
 
 
+			Inode dNode; DirEntry dDir;
+			GetDirEntry(relTBlck, targetEntry, &dDir);
+			GetInode(dDir.inodeNum, &dNode);
 
 			// REMOVE DATA
 			{
-
 				for (int i = 0; i < dNode.allocBlocks; ++i) {
 					if (i < NUM_OF_DIRECT_BLOCK_PTR) {
 						if (dNode.dirBlockPtr[i] < 1) break;
@@ -529,26 +527,29 @@ int RemoveFile(char* name)
 					
 						dNode.dirBlockPtr[i] = 0;
 						dNode.size -= BLOCK_SIZE;
-						dNode.allocBlocks--;
 					}
 					else {
 						if (dNode.indirectBlockPtr < 1) break;
 						int blck = GetIndirectBlockEntry(dNode.indirectBlockPtr, i - NUM_OF_DIRECT_BLOCK_PTR);
 						if (blck < 1) break;
+						RemoveIndirectBlockEntry(dNode.indirectBlockPtr, i - NUM_OF_DIRECT_BLOCK_PTR);
 						ResetBlockBytemap(blck);
 						pFileSysInfo->numFreeBlocks++;
 						pFileSysInfo->numAllocBlocks--;
 						dNode.size -= BLOCK_SIZE;
-						dNode.allocBlocks--;
 					}
 
 					PutInode(dDir.inodeNum, &dNode);
 				}
 				if (dNode.indirectBlockPtr > 0) {
 					ResetBlockBytemap(dNode.indirectBlockPtr);
+					pFileSysInfo->numFreeBlocks++;
+					pFileSysInfo->numAllocBlocks--;
 					dNode.indirectBlockPtr = 0;
-					PutInode(dDir.inodeNum, &dNode);
 				}
+
+				dNode.allocBlocks = 0;
+				PutInode(dDir.inodeNum, &dNode);
 
 			}
 
