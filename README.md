@@ -1,2 +1,7 @@
-# Univ.OS_FAT
-Assignment in lecture called Operating System: realize FileSystem called FAT
+Univ.OS_FAT
+---
+Kwangwoon Univ.  
+Lecture:2022-1 Operating System  
+
+Desc:  
+Realize FileSystem called FAT
